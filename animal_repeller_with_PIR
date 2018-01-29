@@ -1,0 +1,238 @@
+#include <SoftwareSerial.h>
+#include <DFPlayer_Mini_Mp3.h>
+
+SoftwareSerial DFPlayerSerial(3, 2);
+
+int ledPin = 13;                // choose the pin for the LED
+int PIR_1 = 8;               // choose the input pin (for PIR sensor)
+int PIR_2 = 9;               // choose the input pin (for PIR sensor)
+int PIR_3 = 10;               // choose the input pin (for PIR sensor)
+int status_pin = 4;
+
+int pirState_1 = LOW;             // we start, assuming no motion detected
+int pirState_2 = LOW;             // we start, assuming no motion detected
+int pirState_3 = LOW;             // we start, assuming no motion detected
+
+int val_1 = 0;                    // variable for reading the pin status
+int val_2 = 0;                    // variable for reading the pin status
+int val_3 = 0;                    // variable for reading the pin status
+int status = 0;
+
+bool special_sount_played = false, detector = false;        
+
+//the time when the sensor outputs a low impulse
+long unsigned int lowIn;         
+
+//the amount of milliseconds the sensor has to be low 
+//before we assume all motion has stopped
+long unsigned int pause = 5000;  
+
+boolean lockLow = true, still_decreasing = false;
+boolean takeLowTime;  
+
+int Time = 0, bird_detected = 0, d[10], i = 0, decreased = 0;
+
+uint16_t volume = 28;
+long RandomNumber;
+
+// helper function to determine free ram at runtime
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
+void setup() {
+  // put your setup code here, to run once:
+  DFPlayerSerial.begin (9600);
+  Serial.begin(9600);
+   
+  mp3_set_serial (DFPlayerSerial);
+  delay(10);  //wait 1ms for mp3 module to set volume
+  mp3_set_volume (volume);
+  pinMode(ledPin, OUTPUT);      // declare LED as output
+  pinMode(PIR_1, INPUT);     // declare sensor as input
+  pinMode(PIR_2, INPUT);     // declare sensor as input
+  pinMode(PIR_3, INPUT);     // declare sensor as input
+  pinMode(status_pin, INPUT);
+
+  digitalWrite(PIR_1, LOW);
+  digitalWrite(PIR_2, LOW);
+  digitalWrite(PIR_3, LOW);
+ // digitalWrite(status, LOW);
+  
+    //give the sensor some time to calibrate
+  Serial.print("calibrating sensor ");
+    for(int i = 0; i < 5; i++){
+      Serial.print(".");
+      delay(1000);
+      }
+    Serial.println(" done");
+    Serial.println("SENSOR ACTIVE");
+    delay(50);
+ delay(1000);
+
+}
+
+uint32_t timer = millis();
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  val_1 = digitalRead(PIR_1);  // read input value
+  val_2 = digitalRead(PIR_2);  // read input value
+  val_3 = digitalRead(PIR_3);  // read input value
+  status = digitalRead(status_pin);  // read input value
+    
+    Time = millis()/1000;
+    
+    if(val_1 == HIGH || val_2 == HIGH || val_3 == HIGH){
+      detector = true;
+    }
+    else detector = false;
+
+    delay(40);                     // Wait 50ms between pings (about 20 pings/sec). 29ms should be the shortest delay between pings.
+    
+    if(detector){
+          
+        if(lockLow){  
+           //makes sure we wait for a transition to LOW before any further output is made:
+            lockLow = false; 
+            d[i] = Time;
+                       
+            Serial.println("---------------------------");
+            Serial.print("motion detected at "); Serial.print(d[i]); Serial.println(" sec");
+            Serial.print("Time interval: "); Serial.println(d[i] - d[i - 1]);
+
+               
+               third_case();
+               
+               if(i > 1){
+                
+                bird_detected++;
+                Serial.print("Counter for situation 2: "); Serial.println(bird_detected);
+                
+                  if(d[i - 1] - d[i - 2] >= d[i] - d[i - 1]){
+                    decreased++;
+                    still_decreasing = true;
+                  } else {
+                    still_decreasing = false;
+                    special_sount_played = false;
+                  }
+                
+                 fourth_case();
+                  
+                 second_case();
+                
+                 if (i > 2){
+                   d[0] = d[1];
+                   d[1] = d[2];
+                   d[2] = d[3];
+                   i = 2;
+                 }
+               }
+               
+            i++;
+            delay(50);
+                        
+           first_case();
+           
+          }         
+            
+            takeLowTime = true;
+            
+        }
+        else {
+             if(takeLowTime){
+                lowIn = millis();          //save the time of the transition from high to LOW
+                takeLowTime = false;       //make sure this is only done at the start of a LOW phase
+             }
+             //if the sensor is low for more than the given pause, 
+             //we assume that no more motion is going to happen
+             if(!lockLow && millis() - lowIn > pause || status == 1){  
+                 //makes sure this block of code is only executed again after 
+                 //a new motion sequence has been detected
+                 lockLow = true;                        
+                 Serial.print("motion ended at ");      //output
+                 Serial.print((millis() - pause)/1000);
+                 Serial.println(" sec");
+                 delay(50);
+             }
+        }
+    
+  //Serial.println(millis() - timer);
+  delay(50);
+//  distance1 = 0; 
+  freeRam(); 
+  Serial.flush();  
+}
+
+void first_case(){
+  
+  Serial.print("Counter for situation 1: "); Serial.println(decreased);
+  
+   if(decreased >= 3){
+     play_spacial_sound_1();
+     decreased = 0;
+     Serial.println("Special sound played for 1 situation!");               
+     special_sount_played = true;
+     bird_detected = 0;
+
+   } else {
+     if(!special_sount_played){
+       //play_single_sound();
+       play_random_sound();
+       Serial.println("Random playing sound!");
+     }
+     special_sount_played = false;                
+  } 
+}
+
+void second_case(){
+  
+    if(!special_sount_played && bird_detected > 5){
+      play_spacial_sound_1();
+      bird_detected = 0;
+      Serial.println("Special sound played for 2 situation!");
+      decreased = 0;
+      special_sount_played = true;
+    }
+}
+
+void third_case(){
+ 
+     if(i > 2)
+       if((d[i - 2] - d[i - 3] <= d[i - 1] - d[i - 2]) && (d[i - 1] - d[i - 2] <= d[i] - d[i - 1])){ // third situation
+         bird_detected = 0;
+         decreased = 0;
+       }
+}
+void fourth_case(){
+  
+    if(still_decreasing && special_sount_played){
+      play_spacial_sound_2();
+      Serial.println("Special sound played for 4 situation!");
+      bird_detected = 0;
+      decreased = 0;
+    }
+}
+
+void play_spacial_sound_1(){
+
+          mp3_play (6);  
+}
+
+void play_spacial_sound_2(){
+           mp3_play (7);  
+}
+
+void play_random_sound(){
+  
+         RandomNumber = random(1, 6);
+         mp3_play (RandomNumber); 
+        // Serial.println(RandomNumber); 
+}
+
+void play_single_sound(){
+
+            mp3_play (1);  
+}
